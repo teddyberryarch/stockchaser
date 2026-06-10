@@ -1,4 +1,14 @@
 {
   "tier_hynix": 1,
-  "tier_sandisk": 0
+  "tier_sandisk": 0,
+  "cyc_hynix": {
+    "cyc_high": 2407000.0,
+    "target": 40,
+    "maxed": false
+  },
+  "cyc_sandisk": {
+    "cyc_high": 1861.0,
+    "target": 30,
+    "maxed": false
+  }
 }
