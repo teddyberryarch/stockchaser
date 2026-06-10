@@ -56,7 +56,7 @@ const DEFAULTS = {
   hynix:   {label:"하이닉스", ccy:"KRW", spot_name:"SK하이닉스",      lev_name:"TIGER 하이닉스 레버",
             spot_shares:13, lev_shares:916, min_action:2000000, taxable:false, t1:10, t2:20, t3:30},
   sandisk: {label:"샌디스크", ccy:"USD", spot_name:"샌디스크",        lev_name:"TRADR 샌디스크 2배",
-            spot_shares:11, lev_shares:280, min_action:1500, taxable:true, t1:15, t2:27, t3:38},
+            spot_shares:11, lev_shares:280, min_action:1500, taxable:true, t1:15, t2:30, t3:40},
 };
 
 function loadHoldings(){
@@ -76,9 +76,10 @@ let LIVE = {};   // data.json (시세)
 
 const fmtW = (a)=> Math.round(a).toLocaleString("ko-KR")+"원";
 function tierTarget(dd,t1,t2,t3){
-  if(dd<=-t3) return [3,60];
-  if(dd<=-t2) return [2,50];
-  if(dd<=-t1) return [1,40];
+  const e=1e-6;
+  if(dd<=-t3+e) return [3,60];
+  if(dd<=-t2+e) return [2,50];
+  if(dd<=-t1+e) return [1,40];
   return [0,30];
 }
 

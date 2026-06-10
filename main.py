@@ -35,7 +35,7 @@ DEFAULT_HOLDINGS = {
         "label": "샌디스크", "yf": "SNDK", "lev_yf": "SNXX", "ccy": "USD",
         "spot_name": "샌디스크", "lev_name": "TRADR 샌디스크 2배",
         "spot_shares": 11, "lev_shares": 280, "min_action": 1_500, "taxable": True,
-        "t1": 15, "t2": 27, "t3": 38,
+        "t1": 15, "t2": 30, "t3": 40,
     },
 }
 
@@ -86,9 +86,10 @@ def usdkrw():
 WARN_LEVELS = [40, 50, 60]  # -40/-50/-60%
 
 def tier_target(dd, t1, t2, t3):
-    if dd <= -t3: return 3, 60
-    if dd <= -t2: return 2, 50
-    if dd <= -t1: return 1, 40
+    e = 1e-6  # 부동소수점 경계 보정 (-15.0%가 -15 트리거에 확실히 걸리도록)
+    if dd <= -t3 + e: return 3, 60
+    if dd <= -t2 + e: return 2, 50
+    if dd <= -t1 + e: return 1, 40
     return 0, 30
 TIER_NAME = {0: "정상", 1: "폭락 1단계", 2: "폭락 2단계", 3: "폭락 3단계"}
 
