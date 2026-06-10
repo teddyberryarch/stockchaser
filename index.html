@@ -54,9 +54,9 @@ const TIER_COLOR = {0:"#3fb950",1:"#ffb454",2:"#f0883e",3:"#f6435b"};
 // 보유 기본값 (localStorage 없을 때)
 const DEFAULTS = {
   hynix:   {label:"하이닉스", ccy:"KRW", spot_name:"SK하이닉스",      lev_name:"TIGER 하이닉스 레버",
-            spot_shares:13, lev_shares:916, lev_ref:18145960, spot_ref:2084000, min_action:2000000, taxable:false, t1:10, t2:20, t3:30},
+            spot_shares:13, lev_shares:916, min_action:2000000, taxable:false, t1:10, t2:20, t3:30},
   sandisk: {label:"샌디스크", ccy:"USD", spot_name:"샌디스크",        lev_name:"TRADR 샌디스크 2배",
-            spot_shares:11, lev_shares:280, lev_ref:6888,     spot_ref:1646.54, min_action:1500,    taxable:true,  t1:15, t2:27, t3:38},
+            spot_shares:11, lev_shares:280, min_action:1500, taxable:true, t1:15, t2:27, t3:38},
 };
 
 function loadHoldings(){
@@ -87,13 +87,12 @@ function compute(name){
   if(!L || L.error) return {error: L? L.error : "시세 없음", label:h.label};
   const fx = LIVE._fx || 1385;            // USD/KRW
   const k = (h.ccy==="USD") ? fx : 1;     // 표시·계산용 원화 환산계수
-  const spot_p = L.spot_p, high10 = L.high10;   // 원래 통화(달러/원)
+  const spot_p = L.spot_p, high10 = L.high10, lev_p = L.lev_p;   // 원래 통화(달러/원)
   const dd = high10 ? (spot_p-high10)/high10*100 : 0;  // 판정은 원래 통화 기준(환율 노이즈 X)
   const [tier,target] = tierTarget(dd, h.t1, h.t2, h.t3);
-  // 보유값 lev_ref는 입력 통화(샌디스크면 달러). 원화로 환산해서 표시·계산.
+  // 레버 시세도 봇이 야후에서 가져옴 → 실제값으로 정확히 (추정 아님)
   const spot_val = spot_p * h.spot_shares * k;
-  const r = h.spot_ref ? (spot_p/h.spot_ref - 1) : 0;
-  const lev_est = Math.max(0, h.lev_ref * (1+2*r) * k);
+  const lev_est  = lev_p  * h.lev_shares  * k;
   const pool = spot_val + lev_est;
   const lev_pct = pool ? lev_est/pool*100 : 0;
   const min_action_krw = h.min_action * k;
@@ -101,7 +100,6 @@ function compute(name){
   let action=null;
   if(delta > min_action_krw){ const amt=Math.min(delta,spot_val); action={dir:"up",amt,sell:h.spot_name,buy:h.lev_name}; }
   else if(delta < -min_action_krw){ const amt=Math.min(-delta,lev_est); action={dir:"down",amt,sell:h.lev_name,buy:h.spot_name}; }
-  // 단계별 트리거 가격(본주 기준, 원화 환산)
   const trig = [
     {lv:40, p:high10*(1-h.t1/100)*k, t:h.t1},
     {lv:50, p:high10*(1-h.t2/100)*k, t:h.t2},
@@ -152,25 +150,17 @@ function render(){
 
 function editBox(name){
   const h = HOLD[name];
-  const cu = h.ccy;
   return `<div class="editbox" id="edit_${name}">
     <div class="frow"><label>현물 주수</label><input id="${name}_ss" type="number" value="${h.spot_shares}"></div>
     <div class="frow"><label>레버 주수</label><input id="${name}_ls" type="number" value="${h.lev_shares}"></div>
-    <div class="frow"><label>레버 평가액 (${cu==="USD"?"$":"원"})</label><input id="${name}_lr" type="number" value="${h.lev_ref}"></div>
     <button class="savebtn" onclick="save('${name}')">저장</button>
-    <div style="font-size:14px;color:#8b949e;margin-top:8px">레버 평가액은 토스 평가액 그대로. 저장 시 현재 본주가를 기준점으로 기록(추정용).</div>
+    <div style="font-size:14px;color:#8b949e;margin-top:8px">주수만 입력하면 됨. 시세(현물·레버)는 봇이 야후에서 자동으로 가져와 계산.</div>
   </div>`;
 }
 function toggle(name){ document.getElementById("edit_"+name).classList.toggle("open"); }
 function save(name){
-  const ss = Number(document.getElementById(name+"_ss").value);
-  const ls = Number(document.getElementById(name+"_ls").value);
-  const lr = Number(document.getElementById(name+"_lr").value);
-  HOLD[name].spot_shares = ss;
-  HOLD[name].lev_shares = ls;
-  HOLD[name].lev_ref = lr;
-  // 저장 시점의 본주가를 추정 기준점으로 (시세가 있으면)
-  if(LIVE[name] && !LIVE[name].error) HOLD[name].spot_ref = LIVE[name].spot_p;
+  HOLD[name].spot_shares = Number(document.getElementById(name+"_ss").value);
+  HOLD[name].lev_shares  = Number(document.getElementById(name+"_ls").value);
   saveHoldings(HOLD);
   render();
 }

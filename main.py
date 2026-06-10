@@ -26,17 +26,15 @@ SET = {"baseline": 30, "t1": 10, "t2": 20, "t3": 30}
 # 기본 보유값 (holdings.json 없을 때만 사용)
 DEFAULT_HOLDINGS = {
     "hynix": {
-        "label": "하이닉스", "yf": "000660.KS", "ccy": "KRW",
+        "label": "하이닉스", "yf": "000660.KS", "lev_yf": "0195S0.KS", "ccy": "KRW",
         "spot_name": "SK하이닉스", "lev_name": "TIGER 하이닉스 레버",
-        "spot_shares": 13, "min_action": 2_000_000, "taxable": False,
-        "lev_ref": 18_145_960, "spot_ref": 2_084_000,
+        "spot_shares": 13, "lev_shares": 916, "min_action": 2_000_000, "taxable": False,
         "t1": 10, "t2": 20, "t3": 30,
     },
     "sandisk": {
-        "label": "샌디스크", "yf": "SNDK", "ccy": "USD",
+        "label": "샌디스크", "yf": "SNDK", "lev_yf": "SNXX", "ccy": "USD",
         "spot_name": "샌디스크", "lev_name": "TRADR 샌디스크 2배",
-        "spot_shares": 11, "min_action": 1_500, "taxable": True,
-        "lev_ref": 6_888, "spot_ref": 1_646.54,
+        "spot_shares": 11, "lev_shares": 280, "min_action": 1_500, "taxable": True,
         "t1": 15, "t2": 27, "t3": 38,
     },
 }
@@ -99,13 +97,13 @@ def fmt(a, ccy):
 
 def evaluate(name, c, fx=1.0):
     spot_p, high10 = quote(c["yf"])
+    lev_p, _ = quote(c["lev_yf"])           # 레버 현재가도 야후에서 직접
     dd = (spot_p - high10) / high10 * 100 if high10 else 0
     # 표시는 원화로 통일. 달러 종목은 환율 곱함(판정은 아래에서 원래 통화로).
     krw = fx if c["ccy"] == "USD" else 1.0
     tier, target = tier_target(dd, c["t1"], c["t2"], c["t3"])
     spot_val = spot_p * c["spot_shares"]
-    r = (spot_p / c["spot_ref"] - 1) if c["spot_ref"] else 0
-    lev_est = max(0.0, c["lev_ref"] * (1 + 2 * r))
+    lev_est = lev_p * c["lev_shares"]        # 실제 시세 기반 (추정 아님)
     pool = spot_val + lev_est
     lev_pct = lev_est / pool * 100 if pool else 0
     delta = pool * target / 100 - lev_est
@@ -121,10 +119,11 @@ def evaluate(name, c, fx=1.0):
     for lv in [c["t3"]+10, c["t3"]+20, c["t3"]+30]:
         if dd <= -lv: warn = lv
     return {"label": c["label"], "ccy": c["ccy"], "taxable": c["taxable"],
-            "spot_p": spot_p, "high10": high10, "dd": dd, "krw": krw,
+            "spot_p": spot_p, "high10": high10, "lev_p": lev_p, "dd": dd, "krw": krw,
             "tier": tier, "target": target, "lev_pct": lev_pct, "action": action,
-            "warn": warn,
+            "warn": warn, "spot_shares": c["spot_shares"], "lev_shares": c["lev_shares"],
             "spot_p_krw": spot_p * krw, "high10_krw": high10 * krw,
+            "pool_krw": pool * krw,
             "amt_krw": (action["amt"] * krw) if action else 0}
 
 def alert_text(r, prev):
