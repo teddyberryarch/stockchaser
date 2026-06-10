@@ -79,31 +79,30 @@ const fmtW = (a)=> Math.round(a).toLocaleString("ko-KR")+"원";
 function compute(name){
   const h = HOLD[name], L = LIVE[name];
   if(!L || L.error) return {error: L? L.error : "시세 없음", label:h.label};
-  const fx = LIVE._fx || 1385;            // USD/KRW
-  const k = (h.ccy==="USD") ? fx : 1;     // 표시·계산용 원화 환산계수
-  const spot_p = L.spot_p, lev_p = L.lev_p;
-  // 사이클 판정값은 봇(main.py)이 계산해 data.json에 넣음 → 그대로 사용
+  // 봇(main.py)이 모든 값을 원화로 환산해서 넣음 → 추가 환산 없음
+  const spot_p = L.spot_p, lev_p = L.lev_p;   // 이미 원화
   const dd = L.dd, target = L.target, maxed = L.maxed, tier = L.tier;
   const cyc_high = L.cyc_high, reset_price = L.reset_price, reset_pct = L.reset_pct||30;
-  // 평가액은 현재 보유주수 × 실시세로 대시보드에서 재계산(주수 수정 즉시 반영)
-  const spot_val = spot_p * h.spot_shares * k;
-  const lev_est  = lev_p  * h.lev_shares  * k;
+  // 평가액은 현재 보유주수 × 실시세(원화)로 재계산 (주수 수정 즉시 반영)
+  const spot_val = spot_p * h.spot_shares;
+  const lev_est  = lev_p  * h.lev_shares;
   const pool = spot_val + lev_est;
   const lev_pct = pool ? lev_est/pool*100 : 0;
-  const min_action_krw = h.min_action * k;
+  const fx = LIVE._fx || 1385;
+  const min_action_krw = h.min_action * (h.ccy==="USD" ? fx : 1);
   const delta = pool*target/100 - lev_est;
   let action=null;
   if(delta > min_action_krw){ const amt=Math.min(delta,spot_val); action={dir:"up",amt,sell:h.spot_name,buy:h.lev_name}; }
   else if(delta < -min_action_krw){ const amt=Math.min(-delta,lev_est); action={dir:"down",amt,sell:h.lev_name,buy:h.spot_name}; }
-  // 키움 트리거 가격(사이클고점 대비, 원화) — 하락 국면 안내
+  // 키움 트리거 가격(사이클고점 대비, 이미 원화)
   const trig = [
-    {lv:40, p:cyc_high*(1-h.t1/100)*k, t:h.t1},
-    {lv:50, p:cyc_high*(1-h.t2/100)*k, t:h.t2},
-    {lv:60, p:cyc_high*(1-h.t3/100)*k, t:h.t3},
+    {lv:40, p:cyc_high*(1-h.t1/100), t:h.t1},
+    {lv:50, p:cyc_high*(1-h.t2/100), t:h.t2},
+    {lv:60, p:cyc_high*(1-h.t3/100), t:h.t3},
   ];
   return {label:h.label, taxable:h.taxable, dd, tier, target, maxed, lev_pct, pool, action, trig,
-          spot_p_krw: spot_p*k, cyc_high_krw: cyc_high*k,
-          reset_price_krw: reset_price*k, reset_pct,
+          spot_p_krw: spot_p, cyc_high_krw: cyc_high,
+          reset_price_krw: reset_price, reset_pct,
           spot_shares:h.spot_shares, lev_shares:h.lev_shares};
 }
 

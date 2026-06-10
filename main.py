@@ -63,12 +63,12 @@ def quote(yticker):
     cur = None
     try: cur = float(t.fast_info["last_price"])
     except Exception: pass
-    hist = t.history(period="1mo", interval="1d")
+    hist = t.history(period="3mo", interval="1d")   # 60거래일 ~ 3개월
     if hist is None or hist.empty:
         raise RuntimeError(f"{yticker} 데이터 없음")
     if cur is None: cur = float(hist["Close"].iloc[-1])
-    high10 = float(hist["High"].tail(10).max())
-    return cur, high10
+    roll_high = float(hist["High"].tail(60).max())  # 60거래일 rolling 최고가
+    return cur, roll_high
 
 def usdkrw():
     """USD/KRW 환율. 실패 시 보수적 기본값."""
@@ -105,23 +105,31 @@ def fmt(a, ccy):
     return f"{round(a):,}원" if ccy == "KRW" else f"${a:,.0f}"
 
 def evaluate(name, c, fx=1.0, st=None):
-    """st = 이 종목의 사이클 상태 dict {cyc_high, target, maxed}. 갱신해서 돌려줌."""
-    spot_p, high10 = quote(c["yf"])
-    lev_p, _ = quote(c["lev_yf"])
+    """st = 사이클 상태 {cyc_high(원화), target, maxed}. 갱신해 돌려줌.
+    하이브리드: 평소(기본30%)엔 60일 rolling 고점 자동 추적,
+    폭락 키우기 시작하면 그 고점 고정 → +30% 리셋까지 60% 유지 → 리셋 후 다시 rolling.
+    판정·표시 모두 원화 기준(달러 종목은 환율 곱해 원화로 통일)."""
+    spot_p_raw, roll_high_raw = quote(c["yf"])     # 원래 통화(달러/원)
+    lev_p_raw, _ = quote(c["lev_yf"])
     krw = fx if c["ccy"] == "USD" else 1.0
 
-    # 사이클 상태 초기화 (처음엔 현재 고점/30%/비풀충)
+    # 전부 원화로 환산해서 판정 (어차피 원화로 보고 거래)
+    spot_p    = spot_p_raw * krw
+    roll_high = roll_high_raw * krw
+    lev_p     = lev_p_raw * krw
+
     st = dict(st or {})
-    cyc_high = st.get("cyc_high") or high10 or spot_p
-    target   = st.get("target", 30)
-    maxed    = st.get("maxed", False)
+    target = st.get("target", 30)
+    maxed  = st.get("maxed", False)
+    # 사이클 고점: 폭락 키우기 전(기본 상태)엔 rolling 고점 자동 추적.
+    # 키우기 시작(target>30 or maxed)하면 고정된 값 유지.
+    ramping = (target > 30) or maxed
+    if not ramping:
+        cyc_high = roll_high            # 자동: 60일 최고가 (신고가 갱신 자동 반영)
+    else:
+        cyc_high = st.get("cyc_high", roll_high)   # 고정값 유지
 
-    # 상승 중엔 사이클고점 갱신 (아직 60% 풀충 전이면 신고가 따라 올림)
-    if not maxed and spot_p > cyc_high:
-        cyc_high = spot_p
-
-    dd  = (spot_p - cyc_high) / cyc_high * 100 if cyc_high else 0   # 사이클고점 대비
-    upp = (spot_p - cyc_high) / cyc_high * 100 if cyc_high else 0   # (리셋 판정용, 동일식)
+    dd = (spot_p - cyc_high) / cyc_high * 100 if cyc_high else 0   # 사이클고점 대비(원화)
 
     event = None          # "ramp" | "reset"
     tier = 0
@@ -129,49 +137,51 @@ def evaluate(name, c, fx=1.0, st=None):
         t, tgt = tier_from_drop(dd, c["t1"], c["t2"], c["t3"])
         tier = t
         if tgt > target:                 # 더 키우는 방향만 (오를 땐 안 줄임)
+            if target == 30:
+                cyc_high = roll_high     # 폭락 시작 순간의 rolling 고점을 고정
+                dd = (spot_p - cyc_high) / cyc_high * 100 if cyc_high else 0
             target = tgt
             event = "ramp"
             if target >= 60:
-                maxed = True             # 60% 풀충 → 리셋 대기 모드
+                maxed = True             # 60% 풀충 → 리셋 대기
         # 오를 땐 target 유지 (절대 안 줄임)
     else:
         tier = 3
         if spot_p >= cyc_high * (1 + RESET_PCT / 100):   # 전고점 +30% 도달
             target = 30
             maxed = False
-            cyc_high = spot_p            # 리셋 시점이 새 사이클 고점
             event = "reset"
             tier = 0
+            cyc_high = roll_high         # 리셋 후 다시 rolling으로
 
-    # 평가
+    # 평가 (전부 원화)
     spot_val = spot_p * c["spot_shares"]
     lev_est  = lev_p * c["lev_shares"]
     pool = spot_val + lev_est
     lev_pct = lev_est / pool * 100 if pool else 0
+    min_action_krw = c["min_action"] * krw
     delta = pool * target / 100 - lev_est
     action = None
-    if delta > c["min_action"]:
+    if delta > min_action_krw:
         amt = min(delta, spot_val)
         action = {"dir": "up", "amt": amt, "sell": c["spot_name"], "buy": c["lev_name"]}
-    elif delta < -c["min_action"]:
+    elif delta < -min_action_krw:
         amt = min(-delta, lev_est)
         action = {"dir": "down", "amt": amt, "sell": c["lev_name"], "buy": c["spot_name"]}
 
-    # 리셋까지 남은 목표가(상승 국면 안내용)
     reset_price = cyc_high * (1 + RESET_PCT / 100)
 
     new_st = {"cyc_high": cyc_high, "target": target, "maxed": maxed}
     return {"label": c["label"], "ccy": c["ccy"], "taxable": c["taxable"],
-            "spot_p": spot_p, "high10": high10, "lev_p": lev_p,
-            "cyc_high": cyc_high, "dd": dd, "upp": upp, "krw": krw,
+            "spot_p": spot_p, "lev_p": lev_p, "cyc_high": cyc_high,
+            "dd": dd, "krw": krw,
             "tier": tier, "target": target, "maxed": maxed, "event": event,
             "lev_pct": lev_pct, "action": action,
             "reset_price": reset_price, "reset_pct": RESET_PCT,
             "spot_shares": c["spot_shares"], "lev_shares": c["lev_shares"],
-            "spot_p_krw": spot_p * krw, "high10_krw": high10 * krw,
-            "cyc_high_krw": cyc_high * krw, "reset_price_krw": reset_price * krw,
-            "pool_krw": pool * krw,
-            "amt_krw": (action["amt"] * krw) if action else 0}, new_st
+            "spot_p_krw": spot_p, "cyc_high_krw": cyc_high,
+            "reset_price_krw": reset_price, "pool_krw": pool,
+            "amt_krw": (action["amt"]) if action else 0}, new_st
 
 def alert_text(r):
     ev = r["event"]
