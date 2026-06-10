@@ -21,6 +21,10 @@
   .k{font-size:15px;color:#8b949e}
   .v{font-size:19px;font-weight:600;margin-top:2px}
   .lev{font-size:17px;margin:14px 0 10px}
+  .trig{display:flex;gap:8px;margin-bottom:10px}
+  .tg{flex:1;background:#0d1117;border-radius:8px;padding:8px 6px;text-align:center}
+  .tgk{font-size:14px;color:#8b949e}
+  .tgv{font-size:16px;font-weight:600;margin-top:2px}
   .act{background:#0d1117;border-radius:12px;padding:14px;font-size:17px}
   .act.none{color:#8b949e}
   .actrow{margin-bottom:6px}
@@ -97,7 +101,13 @@ function compute(name){
   let action=null;
   if(delta > min_action_krw){ const amt=Math.min(delta,spot_val); action={dir:"up",amt,sell:h.spot_name,buy:h.lev_name}; }
   else if(delta < -min_action_krw){ const amt=Math.min(-delta,lev_est); action={dir:"down",amt,sell:h.lev_name,buy:h.spot_name}; }
-  return {label:h.label, taxable:h.taxable, dd, tier, target, lev_pct, pool, action,
+  // 단계별 트리거 가격(본주 기준, 원화 환산)
+  const trig = [
+    {lv:40, p:high10*(1-h.t1/100)*k, t:h.t1},
+    {lv:50, p:high10*(1-h.t2/100)*k, t:h.t2},
+    {lv:60, p:high10*(1-h.t3/100)*k, t:h.t3},
+  ];
+  return {label:h.label, taxable:h.taxable, dd, tier, target, lev_pct, pool, action, trig,
           spot_p_krw: spot_p*k, high10_krw: high10*k,
           spot_shares:h.spot_shares, lev_shares:h.lev_shares};
 }
@@ -131,6 +141,7 @@ function render(){
         <div><div class="k">고점대비</div><div class="v" style="color:${ddcol}">${r.dd>=0?"+":""}${r.dd.toFixed(1)}%</div></div>
       </div>
       <div class="lev">레버 약 <b>${Math.round(r.lev_pct)}%</b> → 목표 <b style="color:${col}">${r.target}%</b></div>
+      <div class="trig">${r.trig.map(t=>`<div class="tg"><div class="tgk">-${t.t}% → ${t.lv}%</div><div class="tgv">${fmtW(t.p)}</div></div>`).join("")}</div>
       ${act}
       <button class="editbtn" onclick="toggle('${name}')">보유 수정</button>
       ${editBox(name)}
