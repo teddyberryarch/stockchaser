@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tebestck 대시보드</title>
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;padding:20px 16px 40px}
+  .wrap{max-width:520px;margin:0 auto}
+  h1{font-size:24px;font-weight:600;margin-bottom:4px}
+  .sub{font-size:15px;color:#8b949e;margin-bottom:20px}
+  .card{background:#161b22;border-radius:16px;padding:18px;margin-bottom:16px}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .label{font-size:20px;font-weight:600}
+  .tier{font-size:15px;font-weight:600;border:1px solid;border-radius:8px;padding:4px 10px}
+  .grid{display:flex;gap:10px;padding:12px 0;border-top:1px solid #272d36;border-bottom:1px solid #272d36}
+  .grid>div{flex:1}
+  .k{font-size:15px;color:#8b949e}
+  .v{font-size:19px;font-weight:600;margin-top:2px}
+  .lev{font-size:17px;margin:14px 0 10px}
+  .act{background:#0d1117;border-radius:12px;padding:14px;font-size:17px}
+  .act.none{color:#8b949e}
+  .actrow{margin-bottom:6px}
+  .actsum{font-size:16px;color:#8b949e;margin-top:6px}
+  .err{color:#f6435b;font-size:17px;margin-top:8px}
+  .foot{font-size:15px;color:#8b949e;line-height:1.6;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>tebestck 대시보드</h1>
+  <div class="sub" id="sub">불러오는 중…</div>
+  <div id="cards"></div>
+  <div class="foot">교체금액은 레버 평가액을 본주 낙폭 2배로 근사한 추정값. 정확치는 토스에서 확인.<br>본장 기준 · 자동주문 없음 · 5분마다 갱신.</div>
+</div>
+<script>
+const TIER_NAME = {0:"정상",1:"폭락 1단계",2:"폭락 2단계",3:"폭락 3단계"};
+const TIER_COLOR = {0:"#3fb950",1:"#ffb454",2:"#f0883e",3:"#f6435b"};
+const fmt = (a,ccy)=> ccy==="KRW" ? Math.round(a).toLocaleString("ko-KR")+"원" : "$"+Math.round(a).toLocaleString("en-US");
+
+async function load(){
+  try{
+    // 캐시 무력화 위해 쿼리스트링
+    const res = await fetch("data.json?t="+Date.now());
+    const d = await res.json();
+    render(d);
+  }catch(e){
+    document.getElementById("sub").textContent = "data.json 로드 실패 (아직 봇이 안 돌았을 수 있음)";
+  }
+}
+function render(d){
+  const ts = d._ts ? new Date(d._ts*1000).toLocaleString("ko-KR") : "-";
+  document.getElementById("sub").textContent = "야후 시세 · 10거래일 고점 기준 · 갱신 "+ts;
+  let html="";
+  for(const key of Object.keys(d)){
+    if(key.startsWith("_")) continue;
+    const r = d[key];
+    if(r.error){
+      html += `<div class="card"><div class="label">${r.label||key}</div><div class="err">조회 실패: ${r.error}</div></div>`;
+      continue;
+    }
+    const col = TIER_COLOR[r.tier];
+    const ddcol = r.dd<0 ? "#3d7eff" : "#f6435b";
+    let act;
+    if(r.action){
+      const tax = r.taxable ? "⚠️ 22% 과세누적" : "비과세";
+      act = `<div class="act"><div class="actrow">▶ ${r.action.sell} <b>${fmt(r.action.amt,r.ccy)}</b>어치 매도</div>
+             <div class="actrow">▶ ${r.action.buy} <b>${fmt(r.action.amt,r.ccy)}</b>어치 매수</div>
+             <div class="actsum">≈ ${fmt(r.action.amt,r.ccy)} 교체 · ${tax}</div></div>`;
+    }else{
+      act = `<div class="act none">조정 불필요 — 유지</div>`;
+    }
+    html += `<div class="card">
+      <div class="top"><div class="label">${r.label}</div>
+        <div class="tier" style="color:${col};border-color:${col}">${TIER_NAME[r.tier]}</div></div>
+      <div class="grid">
+        <div><div class="k">본주</div><div class="v">${fmt(r.spot_p,r.ccy)}</div></div>
+        <div><div class="k">10일고점</div><div class="v">${fmt(r.high10,r.ccy)}</div></div>
+        <div><div class="k">고점대비</div><div class="v" style="color:${ddcol}">${r.dd>=0?"+":""}${r.dd.toFixed(1)}%</div></div>
+      </div>
+      <div class="lev">레버 약 <b>${Math.round(r.lev_pct)}%</b> → 목표 <b style="color:${col}">${r.target}%</b></div>
+      ${act}
+    </div>`;
+  }
+  document.getElementById("cards").innerHTML = html;
+}
+load();
+setInterval(load, 60000);  // 60초마다 data.json 다시 읽기
+</script>
+</body>
+</html>
