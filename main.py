@@ -30,12 +30,14 @@ DEFAULT_HOLDINGS = {
         "spot_name": "SK하이닉스", "lev_name": "TIGER 하이닉스 레버",
         "spot_shares": 13, "min_action": 2_000_000, "taxable": False,
         "lev_ref": 18_145_960, "spot_ref": 2_084_000,
+        "t1": 10, "t2": 20, "t3": 30,
     },
     "sandisk": {
         "label": "샌디스크", "yf": "SNDK", "ccy": "USD",
         "spot_name": "샌디스크", "lev_name": "TRADR 샌디스크 2배",
         "spot_shares": 11, "min_action": 1_500, "taxable": True,
         "lev_ref": 6_888, "spot_ref": 1_646.54,
+        "t1": 15, "t2": 27, "t3": 38,
     },
 }
 
@@ -70,20 +72,37 @@ def quote(yticker):
     high10 = float(hist["High"].tail(10).max())
     return cur, high10
 
-def tier_target(dd):
-    if dd <= -SET["t3"]: return 3, 60
-    if dd <= -SET["t2"]: return 2, 50
-    if dd <= -SET["t1"]: return 1, 40
-    return 0, SET["baseline"]
+def usdkrw():
+    """USD/KRW 환율. 실패 시 보수적 기본값."""
+    try:
+        t = yf.Ticker("KRW=X")
+        try: return float(t.fast_info["last_price"])
+        except Exception: pass
+        h = t.history(period="5d", interval="1d")
+        return float(h["Close"].iloc[-1])
+    except Exception as e:
+        print("usdkrw 실패, 기본값 사용:", e)
+        return 1380.0
+
+# 경고 단계(고점 대비 더 깊은 낙폭) — 비중은 60% 유지, 경고만
+WARN_LEVELS = [40, 50, 60]  # -40/-50/-60%
+
+def tier_target(dd, t1, t2, t3):
+    if dd <= -t3: return 3, 60
+    if dd <= -t2: return 2, 50
+    if dd <= -t1: return 1, 40
+    return 0, 30
 TIER_NAME = {0: "정상", 1: "폭락 1단계", 2: "폭락 2단계", 3: "폭락 3단계"}
 
 def fmt(a, ccy):
     return f"{round(a):,}원" if ccy == "KRW" else f"${a:,.0f}"
 
-def evaluate(name, c):
+def evaluate(name, c, fx=1.0):
     spot_p, high10 = quote(c["yf"])
     dd = (spot_p - high10) / high10 * 100 if high10 else 0
-    tier, target = tier_target(dd)
+    # 표시는 원화로 통일. 달러 종목은 환율 곱함(판정은 아래에서 원래 통화로).
+    krw = fx if c["ccy"] == "USD" else 1.0
+    tier, target = tier_target(dd, c["t1"], c["t2"], c["t3"])
     spot_val = spot_p * c["spot_shares"]
     r = (spot_p / c["spot_ref"] - 1) if c["spot_ref"] else 0
     lev_est = max(0.0, c["lev_ref"] * (1 + 2 * r))
@@ -97,33 +116,41 @@ def evaluate(name, c):
     elif delta < -c["min_action"]:
         amt = min(-delta, lev_est)
         action = {"dir": "down", "amt": amt, "sell": c["lev_name"], "buy": c["spot_name"]}
+    # 경고: t3(최대단계) 넘어 더 깊이 빠졌나 (비중 60% 유지, 경고만)
+    warn = 0
+    for lv in [c["t3"]+10, c["t3"]+20, c["t3"]+30]:
+        if dd <= -lv: warn = lv
     return {"label": c["label"], "ccy": c["ccy"], "taxable": c["taxable"],
-            "spot_p": spot_p, "high10": high10, "dd": dd,
-            "tier": tier, "target": target, "lev_pct": lev_pct, "action": action}
+            "spot_p": spot_p, "high10": high10, "dd": dd, "krw": krw,
+            "tier": tier, "target": target, "lev_pct": lev_pct, "action": action,
+            "warn": warn,
+            "spot_p_krw": spot_p * krw, "high10_krw": high10 * krw,
+            "amt_krw": (action["amt"] * krw) if action else 0}
 
 def alert_text(r, prev):
     e = "🔴" if r["tier"] > prev else "🟢"
     arrow = "폭락 진입" if r["tier"] > prev else "회복"
-    ccy = r["ccy"]
     L = [f"{e} <b>{r['label']} {TIER_NAME[r['tier']]} ({arrow})</b>",
-         f"본주 {fmt(r['spot_p'], ccy)} · 10일고점 대비 {r['dd']:+.1f}%",
+         f"본주 {fmt(r['spot_p_krw'], 'KRW')} · 10일고점 대비 {r['dd']:+.1f}%",
          f"레버 약 {r['lev_pct']:.0f}% → 목표 {r['target']}%"]
     a = r["action"]
     if a:
         tag = " · ⚠️22% 과세누적" if r["taxable"] else " · 비과세"
-        L += ["", f"▶ {a['sell']} {fmt(a['amt'], ccy)}어치 매도",
-              f"▶ {a['buy']} {fmt(a['amt'], ccy)}어치 매수",
-              f"≈ {fmt(a['amt'], ccy)} 교체{tag}",
+        amt = fmt(r["amt_krw"], "KRW")
+        L += ["", f"▶ {a['sell']} {amt}어치 매도",
+              f"▶ {a['buy']} {amt}어치 매수",
+              f"≈ {amt} 교체{tag}",
               "※ 본장에서 금액 기준으로. 교체금액은 추정이라 토스에서 확인."]
     else:
         L.append("(조정 금액이 작아 액션 없음)")
     return "\n".join(L)
 
 def main():
-    snapshot = {}
+    fx = usdkrw()
+    snapshot = {"_fx": fx}
     for name, c in POOLS.items():
         try:
-            r = evaluate(name, c)
+            r = evaluate(name, c, fx)
         except Exception as ex:
             print(f"[{name}] 실패:", ex)
             snapshot[name] = {"label": c.get("label", name), "error": str(ex)}
@@ -133,7 +160,16 @@ def main():
         if r["tier"] != prev:
             tg_send(alert_text(r, prev))
             STATE[key] = r["tier"]
-        print(f"[{name}] dd={r['dd']:+.1f}% tier={r['tier']} lev~{r['lev_pct']:.0f}%")
+        # -40/-50/-60% 깊은 낙폭 경고 (비중 유지, 추세 점검용)
+        wkey = f"warn_{name}"; wprev = STATE.get(wkey, 0)
+        if r["warn"] > wprev:
+            tg_send(f"🚨 <b>{r['label']} 고점 대비 -{r['warn']}% 돌파</b>\n"
+                    f"본주 {fmt(r['spot_p_krw'],'KRW')} ({r['dd']:+.1f}%)\n"
+                    f"레버 비중은 60%로 유지(상한). 추세 하락인지 점검 필요.\n"
+                    f"※ 추가 매수 자동 안 함. 손절·유지는 직접 판단.")
+        if r["warn"] != wprev:
+            STATE[wkey] = r["warn"]
+        print(f"[{name}] dd={r['dd']:+.1f}% tier={r['tier']} warn={r['warn']} lev~{r['lev_pct']:.0f}%")
 
     # 대시보드용 현황 저장 (한글 라벨 포함)
     snapshot["_ts"] = int(time.time())

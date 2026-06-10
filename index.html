@@ -46,14 +46,13 @@
 <script>
 const TIER_NAME = {0:"정상",1:"폭락 1단계",2:"폭락 2단계",3:"폭락 3단계"};
 const TIER_COLOR = {0:"#3fb950",1:"#ffb454",2:"#f0883e",3:"#f6435b"};
-const SET = {baseline:30,t1:10,t2:20,t3:30};
 
 // 보유 기본값 (localStorage 없을 때)
 const DEFAULTS = {
   hynix:   {label:"하이닉스", ccy:"KRW", spot_name:"SK하이닉스",      lev_name:"TIGER 하이닉스 레버",
-            spot_shares:13, lev_shares:916, lev_ref:18145960, spot_ref:2084000, min_action:2000000, taxable:false},
+            spot_shares:13, lev_shares:916, lev_ref:18145960, spot_ref:2084000, min_action:2000000, taxable:false, t1:10, t2:20, t3:30},
   sandisk: {label:"샌디스크", ccy:"USD", spot_name:"샌디스크",        lev_name:"TRADR 샌디스크 2배",
-            spot_shares:11, lev_shares:280, lev_ref:6888,     spot_ref:1646.54, min_action:1500,    taxable:true},
+            spot_shares:11, lev_shares:280, lev_ref:6888,     spot_ref:1646.54, min_action:1500,    taxable:true,  t1:15, t2:27, t3:38},
 };
 
 function loadHoldings(){
@@ -71,31 +70,36 @@ function saveHoldings(h){ try{ localStorage.setItem("tebestck_holdings", JSON.st
 let HOLD = loadHoldings();
 let LIVE = {};   // data.json (시세)
 
-const fmt = (a,ccy)=> ccy==="KRW" ? Math.round(a).toLocaleString("ko-KR")+"원" : "$"+Math.round(a).toLocaleString("en-US");
-function tierTarget(dd){
-  if(dd<=-SET.t3) return [3,60];
-  if(dd<=-SET.t2) return [2,50];
-  if(dd<=-SET.t1) return [1,40];
-  return [0,SET.baseline];
+const fmtW = (a)=> Math.round(a).toLocaleString("ko-KR")+"원";
+function tierTarget(dd,t1,t2,t3){
+  if(dd<=-t3) return [3,60];
+  if(dd<=-t2) return [2,50];
+  if(dd<=-t1) return [1,40];
+  return [0,30];
 }
 
 function compute(name){
   const h = HOLD[name], L = LIVE[name];
   if(!L || L.error) return {error: L? L.error : "시세 없음", label:h.label};
-  const spot_p = L.spot_p, high10 = L.high10;
-  const dd = high10 ? (spot_p-high10)/high10*100 : 0;
-  const [tier,target] = tierTarget(dd);
-  const spot_val = spot_p * h.spot_shares;
+  const fx = LIVE._fx || 1385;            // USD/KRW
+  const k = (h.ccy==="USD") ? fx : 1;     // 표시·계산용 원화 환산계수
+  const spot_p = L.spot_p, high10 = L.high10;   // 원래 통화(달러/원)
+  const dd = high10 ? (spot_p-high10)/high10*100 : 0;  // 판정은 원래 통화 기준(환율 노이즈 X)
+  const [tier,target] = tierTarget(dd, h.t1, h.t2, h.t3);
+  // 보유값 lev_ref는 입력 통화(샌디스크면 달러). 원화로 환산해서 표시·계산.
+  const spot_val = spot_p * h.spot_shares * k;
   const r = h.spot_ref ? (spot_p/h.spot_ref - 1) : 0;
-  const lev_est = Math.max(0, h.lev_ref*(1+2*r));
+  const lev_est = Math.max(0, h.lev_ref * (1+2*r) * k);
   const pool = spot_val + lev_est;
   const lev_pct = pool ? lev_est/pool*100 : 0;
+  const min_action_krw = h.min_action * k;
   const delta = pool*target/100 - lev_est;
   let action=null;
-  if(delta > h.min_action){ const amt=Math.min(delta,spot_val); action={dir:"up",amt,sell:h.spot_name,buy:h.lev_name}; }
-  else if(delta < -h.min_action){ const amt=Math.min(-delta,lev_est); action={dir:"down",amt,sell:h.lev_name,buy:h.spot_name}; }
-  return {label:h.label, ccy:h.ccy, taxable:h.taxable, spot_p, high10, dd, tier, target, lev_pct, pool,
-          spot_shares:h.spot_shares, lev_shares:h.lev_shares, action};
+  if(delta > min_action_krw){ const amt=Math.min(delta,spot_val); action={dir:"up",amt,sell:h.spot_name,buy:h.lev_name}; }
+  else if(delta < -min_action_krw){ const amt=Math.min(-delta,lev_est); action={dir:"down",amt,sell:h.lev_name,buy:h.spot_name}; }
+  return {label:h.label, taxable:h.taxable, dd, tier, target, lev_pct, pool, action,
+          spot_p_krw: spot_p*k, high10_krw: high10*k,
+          spot_shares:h.spot_shares, lev_shares:h.lev_shares};
 }
 
 function render(){
@@ -113,17 +117,17 @@ function render(){
     let act;
     if(r.action){
       const tax = r.taxable ? "⚠️ 22% 과세누적" : "비과세";
-      act = `<div class="act"><div class="actrow">▶ ${r.action.sell} <b>${fmt(r.action.amt,r.ccy)}</b>어치 매도</div>
-             <div class="actrow">▶ ${r.action.buy} <b>${fmt(r.action.amt,r.ccy)}</b>어치 매수</div>
-             <div class="actsum">≈ ${fmt(r.action.amt,r.ccy)} 교체 · ${tax}</div></div>`;
+      act = `<div class="act"><div class="actrow">▶ ${r.action.sell} <b>${fmtW(r.action.amt)}</b>어치 매도</div>
+             <div class="actrow">▶ ${r.action.buy} <b>${fmtW(r.action.amt)}</b>어치 매수</div>
+             <div class="actsum">≈ ${fmtW(r.action.amt)} 교체 · ${tax}</div></div>`;
     } else act = `<div class="act none">조정 불필요 — 유지</div>`;
     html += `<div class="card">
       <div class="top"><div class="label">${r.label}</div>
         <div class="tier" style="color:${col};border-color:${col}">${TIER_NAME[r.tier]}</div></div>
-      <div class="hold">보유: 현물 <b>${r.spot_shares}주</b> · 레버 <b>${r.lev_shares}주</b> · 풀 ${fmt(r.pool,r.ccy)}</div>
+      <div class="hold">보유: 현물 <b>${r.spot_shares}주</b> · 레버 <b>${r.lev_shares}주</b> · 풀 ${fmtW(r.pool)}</div>
       <div class="grid">
-        <div><div class="k">본주</div><div class="v">${fmt(r.spot_p,r.ccy)}</div></div>
-        <div><div class="k">10일고점</div><div class="v">${fmt(r.high10,r.ccy)}</div></div>
+        <div><div class="k">본주</div><div class="v">${fmtW(r.spot_p_krw)}</div></div>
+        <div><div class="k">10일고점</div><div class="v">${fmtW(r.high10_krw)}</div></div>
         <div><div class="k">고점대비</div><div class="v" style="color:${ddcol}">${r.dd>=0?"+":""}${r.dd.toFixed(1)}%</div></div>
       </div>
       <div class="lev">레버 약 <b>${Math.round(r.lev_pct)}%</b> → 목표 <b style="color:${col}">${r.target}%</b></div>
@@ -141,7 +145,7 @@ function editBox(name){
   return `<div class="editbox" id="edit_${name}">
     <div class="frow"><label>현물 주수</label><input id="${name}_ss" type="number" value="${h.spot_shares}"></div>
     <div class="frow"><label>레버 주수</label><input id="${name}_ls" type="number" value="${h.lev_shares}"></div>
-    <div class="frow"><label>레버 평가액 (${cu})</label><input id="${name}_lr" type="number" value="${h.lev_ref}"></div>
+    <div class="frow"><label>레버 평가액 (${cu==="USD"?"$":"원"})</label><input id="${name}_lr" type="number" value="${h.lev_ref}"></div>
     <button class="savebtn" onclick="save('${name}')">저장</button>
     <div style="font-size:14px;color:#8b949e;margin-top:8px">레버 평가액은 토스 평가액 그대로. 저장 시 현재 본주가를 기준점으로 기록(추정용).</div>
   </div>`;

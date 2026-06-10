@@ -3,12 +3,14 @@
     "label": "하이닉스", "yf": "000660.KS", "ccy": "KRW",
     "spot_name": "SK하이닉스", "lev_name": "TIGER 하이닉스 레버",
     "spot_shares": 13, "min_action": 2000000, "taxable": false,
-    "lev_ref": 18145960, "spot_ref": 2084000
+    "lev_ref": 18145960, "spot_ref": 2084000,
+    "t1": 10, "t2": 20, "t3": 30
   },
   "sandisk": {
     "label": "샌디스크", "yf": "SNDK", "ccy": "USD",
     "spot_name": "샌디스크", "lev_name": "TRADR 샌디스크 2배",
     "spot_shares": 11, "min_action": 1500, "taxable": true,
-    "lev_ref": 6888, "spot_ref": 1646.54
+    "lev_ref": 6888, "spot_ref": 1646.54,
+    "t1": 15, "t2": 27, "t3": 38
   }
 }
