@@ -5,7 +5,7 @@
     "ccy": "KRW",
     "taxable": false,
     "spot_p": 2295000.0,
-    "lev_p": 20870.0,
+    "lev_p": 20880.0,
     "cyc_high": 2407000.0,
     "dd": -4.653095139177399,
     "krw": 1.0,
@@ -13,7 +13,7 @@
     "target": 40,
     "maxed": false,
     "event": null,
-    "lev_pct": 39.052441661123815,
+    "lev_pct": 39.0638441799078,
     "action": null,
     "reset_price": 3129100.0,
     "reset_pct": 30,
@@ -22,7 +22,7 @@
     "spot_p_krw": 2295000.0,
     "cyc_high_krw": 2407000.0,
     "reset_price_krw": 3129100.0,
-    "pool_krw": 48951920.0,
+    "pool_krw": 48961080.0,
     "amt_krw": 0
   },
   "sandisk": {
@@ -55,7 +55,7 @@
     "pool_krw": 39928368.39006241,
     "amt_krw": 5649539.572041659
   },
-  "_ts": 1783048529,
+  "_ts": 1783048832,
   "_tier_name": {
     "0": "정상",
     "1": "폭락 1단계",
