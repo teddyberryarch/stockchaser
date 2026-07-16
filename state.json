@@ -8,7 +8,7 @@
   },
   "cyc_sandisk": {
     "cyc_high": 3614647.78325361,
-    "target": 50,
-    "maxed": false
+    "target": 60,
+    "maxed": true
   }
 }
