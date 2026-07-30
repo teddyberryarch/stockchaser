@@ -4,19 +4,19 @@
     "label": "하이닉스",
     "ccy": "KRW",
     "taxable": false,
-    "spot_p": 1331000.0,
-    "lev_p": 6005.0,
+    "spot_p": 1328000.0,
+    "lev_p": 5975.0,
     "cyc_high": 2407000.0,
-    "dd": -44.7029497299543,
+    "dd": -44.827586206896555,
     "krw": 1.0,
     "tier": 3,
     "target": 60,
     "maxed": true,
     "event": null,
-    "lev_pct": 24.121563368558796,
+    "lev_pct": 24.071231599456393,
     "action": {
       "dir": "up",
-      "amt": 8181568.0,
+      "amt": 8169160.0,
       "sell": "SK하이닉스",
       "buy": "TIGER 하이닉스 레버"
     },
@@ -24,11 +24,11 @@
     "reset_pct": 30,
     "spot_shares": 13,
     "lev_shares": 916,
-    "spot_p_krw": 1331000.0,
+    "spot_p_krw": 1328000.0,
     "cyc_high_krw": 2407000.0,
     "reset_price_krw": 3129100.0,
-    "pool_krw": 22803580.0,
-    "amt_krw": 8181568.0
+    "pool_krw": 22737100.0,
+    "amt_krw": 8169160.0
   },
   "sandisk": {
     "label": "샌디스크",
@@ -60,7 +60,7 @@
     "pool_krw": 18845991.539283186,
     "amt_krw": 8529610.71574078
   },
-  "_ts": 1785392436,
+  "_ts": 1785392553,
   "_tier_name": {
     "0": "정상",
     "1": "폭락 1단계",
